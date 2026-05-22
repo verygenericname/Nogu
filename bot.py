@@ -80,6 +80,31 @@ def normalize_goofish_url(url: str) -> str | None:
     except Exception:
         return None
 
+# Why the fuck does this stupid platform have so many redirects
+async def convert_p_goofish_link(p_url: str) -> str | None:
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(p_url, allow_redirects=False, timeout=10) as resp:
+                if resp.status not in (301, 302):
+                    return None
+
+                location = resp.headers.get("Location")
+                if not location:
+                    return None
+            
+            parsed = urlparse(location)
+            query_params = parse_qs(parsed.query)
+
+            if "id" not in query_params:
+                return None
+
+            item_id = query_params["id"][0]
+
+            return f"https://h5.m.goofish.com/item?id={item_id}"
+
+    except Exception:
+        return None
+
 # Here we go
 class MyClient(discord.Client):
 
@@ -115,13 +140,35 @@ class MyClient(discord.Client):
 
             # Execute www.goofish conversion
             if "goofish.com" in url:
-                await message.edit(suppress=True)
+                if "p.goofish.com" in url:
+                    await message.edit(suppress=True)
 
-                normalized = normalize_goofish_url(url)
-                if normalized:
-                    converted_urls.append(normalized)
+                    loading = self.get_emoji(1475282054274089081)
+                    if loading:
+                        try:
+                            await message.add_reaction(loading)
+                        except discord.HTTPException:
+                            pass
+
+                    converted = await convert_p_goofish_link(url)
+
+                    if converted:
+                        converted_urls.append(converted)
+                    else:
+                        await message.channel.send(f"{message.author.mention} ⚠️ Invalid or unsupported goofish URL.")
+                        try:
+                            await message.clear_reactions()
+                        except:
+                            pass
+                        return
                 else:
-                    await message.channel.send(f"{message.author.mention} ⚠️ Invalid or malformed goofish URL.")
+                    await message.edit(suppress=True)
+
+                    normalized = normalize_goofish_url(url)
+                    if normalized:
+                        converted_urls.append(normalized)
+                    else:
+                        await message.channel.send(f"{message.author.mention} ⚠️ Invalid or unsupported goofish URL.")
                     return
                     
             # Execute m.tb.cn conversion
